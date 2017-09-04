@@ -85,11 +85,20 @@ const processNode = (replacements, nodePath, replaceFn, comparator) => { // esli
 const memberExpressionComparator = (nodePath, value) => nodePath.matchesPattern(value);
 const identifierComparator = (nodePath, value) => nodePath.node.name === value;
 const unaryExpressionComparator = (nodePath, value) => nodePath.node.argument.name === value;
+const importIdentifierComparator = (nodePath, value) => nodePath.node.imported.name === value;
+const importDeclarationComparator = (nodePath, value) => nodePath.node.source.value.match(value);
 
 export default function ({ types: t }) {
   return {
     visitor: {
-
+      // import { __SOMETHING__ as Router } from "react-router"
+      ImportSpecifier(nodePath, state) {
+        processNode(getReplacements(state.opts), nodePath, t.valueToNode, importIdentifierComparator);
+      },
+      // import locales from __SOME_PATH__/locales
+      ImportDeclaration(nodePath, state) {
+        processNode(getReplacements(state.opts), nodePath, t.valueToNode, importDeclarationComparator);
+      },
       // process.env.NODE_ENV;
       MemberExpression(nodePath, state) {
         processNode(getReplacements(state.opts), nodePath, t.valueToNode, memberExpressionComparator);

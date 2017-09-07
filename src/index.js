@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const traverse = require("traverse");
-const { get, has, find } = require("lodash");
+const { get, has, find, partial } = require("lodash");
 
 /**
  * Return an Array of every possible non-cyclic path in the object as a dot separated string sorted
@@ -64,7 +64,6 @@ const replaceAndEvaluateNode = (replaceFn, nodePath, replacement) => {
     }
   }
 };
-
 /**
  * Finds the first replacement in sorted object paths for replacements that causes comparator
  * to return true.  If one is found, replaces the node with it.
@@ -78,6 +77,7 @@ const processNode = (replacements, nodePath, replaceFn, comparator) => { // esli
   const replacementKey = find(getSortedObjectPaths(replacements),
     (value) => comparator(nodePath, value));
   if (has(replacements, replacementKey)) {
+    console.log("Remplacement de ", replacementKey, "par", get(replacements, replacementKey));
     replaceAndEvaluateNode(replaceFn, nodePath, get(replacements, replacementKey));
   }
 };
@@ -85,30 +85,72 @@ const processNode = (replacements, nodePath, replaceFn, comparator) => { // esli
 const memberExpressionComparator = (nodePath, value) => nodePath.matchesPattern(value);
 const identifierComparator = (nodePath, value) => nodePath.node.name === value;
 const unaryExpressionComparator = (nodePath, value) => nodePath.node.argument.name === value;
-const importIdentifierComparator = (nodePath, value) => nodePath.node.imported.name === value;
 const importDeclarationComparator = (nodePath, value) => nodePath.node.source.value.match(value);
+const importAliasComparator = (nodePath, value) => {
+  const importSpecifiers = nodePath.get("specifiers");
+  let found = false;
+  for (const specifier of importSpecifiers) {
+    const node = specifier.node;
+    if (node.imported !== undefined) {
+      const str = node.imported.name;
+      if (str.match(value) && !node.treated) {
+        found = true;
+        node.treated = true;
+      }
+    }
+  }
+  return found;
+};
 
 export default function ({ types: t }) {
   return {
     visitor: {
-      // import { __SOMETHING__ as Router } from "react-router"
-      ImportSpecifier(nodePath, state) {
-        processNode(getReplacements(state.opts), nodePath, t.valueToNode, importIdentifierComparator);
-      },
-      // import locales from __SOME_PATH__/locales
       ImportDeclaration(nodePath, state) {
-        processNode(getReplacements(state.opts), nodePath, t.valueToNode, importDeclarationComparator);
+        const replacements = getReplacements(state.opts);
+        // Parcours des noeuds 
+        let replacementKey = find(getSortedObjectPaths(replacements),
+        (value) => importAliasComparator(nodePath, value));
+        if (has(replacements, replacementKey)) {
+          const replacement = get(replacements, replacementKey);
+          // Modif des nom d'imports
+          const specifiers = nodePath.get("specifiers").filter((path) => t.isImportSpecifier(path));
+          for (const specifier of specifiers) {
+            const specifierReplacement = t.clone(specifier);
+            const imported = specifierReplacement.node.imported;
+            if (imported && imported.name.indexOf(replacementKey) >= 0) {
+              console.log("Remplacement de ", imported.name, "par", imported.name.replace(replacementKey, replacement));
+              imported.loc.identifierName = imported.loc.identifierName.replace(replacementKey, replacement);
+              imported.name = imported.name.replace(replacementKey, replacement);
+              specifier.replaceWith(
+                specifierReplacement.node
+              );
+            }
+          }
+        }
+        
+        replacementKey = find(getSortedObjectPaths(replacements),
+        (value) => importDeclarationComparator(nodePath, value));
+        if (has(replacements, replacementKey)) {
+          const replacement = get(replacements, replacementKey);
+          // Modif des sources
+          const sourceNode = nodePath.get("source");
+          const newSource = t.clone(sourceNode);
+          console.log("Remplacement de", newSource.node.value, "par", newSource.node.value.replace(replacementKey, replacement));
+          newSource.node.value = newSource.node.value.replace(replacementKey, replacement);
+          for (const item in newSource.node.extra) {
+            newSource.node.extra[item] = newSource.node.extra[item].replace(replacementKey, replacement);
+          }
+          sourceNode.replaceWith(newSource.node);
+        }
       },
       // process.env.NODE_ENV;
       MemberExpression(nodePath, state) {
         processNode(getReplacements(state.opts), nodePath, t.valueToNode, memberExpressionComparator);
       },
-
       // const x = { version: VERSION };
       Identifier(nodePath, state) {
         processNode(getReplacements(state.opts), nodePath, t.valueToNode, identifierComparator);
       },
-
       // typeof window
       UnaryExpression(nodePath, state) {
         if (nodePath.node.operator !== "typeof") { return; }
@@ -125,7 +167,6 @@ export default function ({ types: t }) {
 
         processNode(typeofValues, nodePath, t.valueToNode, unaryExpressionComparator);
       }
-
     }
   };
 }

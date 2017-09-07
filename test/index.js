@@ -79,7 +79,7 @@ describe("babel-plugin-transform-define", () => {
       return assertTransform(
         path.join(__dirname, "./false/actual.js"),
         path.join(__dirname, "./false/expected.js"), babelOpts);
-    })
+    });
 
     it("should transform 0", () => {
       const babelOpts = getBabelOps({
@@ -89,17 +89,17 @@ describe("babel-plugin-transform-define", () => {
       return assertTransform(
         path.join(__dirname, "./0/actual.js"),
         path.join(__dirname, "./0/expected.js"), babelOpts);
-    })
+    });
 
     it("should transform empty string", () => {
       const babelOpts = getBabelOps({
-        "PRODUCTION": ''
+        "PRODUCTION": ""
       });
 
       return assertTransform(
         path.join(__dirname, "./emptyString/actual.js"),
         path.join(__dirname, "./emptyString/expected.js"), babelOpts);
-    })
+    });
 
     it("should transform null", () => {
       const babelOpts = getBabelOps({
@@ -109,7 +109,7 @@ describe("babel-plugin-transform-define", () => {
       return assertTransform(
         path.join(__dirname, "./null/actual.js"),
         path.join(__dirname, "./null/expected.js"), babelOpts);
-    })
+    });
 
     it("should transform undefined", () => {
       const babelOpts = getBabelOps({
@@ -119,7 +119,7 @@ describe("babel-plugin-transform-define", () => {
       return assertTransform(
         path.join(__dirname, "./undefined/actual.js"),
         path.join(__dirname, "./undefined/expected.js"), babelOpts);
-    })
+    });
 
     it("should transform code from config in a file", () => {
       const babelOpts = getBabelOps("./test/load-config-file/config.js");
@@ -128,6 +128,25 @@ describe("babel-plugin-transform-define", () => {
         path.join(__dirname, "./load-config-file/actual.js"),
         path.join(__dirname, "./load-config-file/expected.js"), babelOpts);
     });
+
+    it("should transform alias import from import declaration", () => {
+      const babelOpts = getBabelOps({
+        "__ROUTER__": "StaticRouter"
+      });
+      return assertTransform(
+        path.join(__dirname, "./import-alias/actual-alias.js"),
+        path.join(__dirname, "./import-alias/expected.js"), babelOpts);
+    });
+
+    it("should transform path from import declaration", () => {
+      const babelOpts = getBabelOps({
+        "__SOURCE_PATH__": "../src"
+      });
+      return assertTransform(
+        path.join(__dirname, "./import-source-path/actual.js"),
+        path.join(__dirname, "./import-source-path/expected.js"), babelOpts);
+    });
+
   });
 
   describe("unit tests", () => {

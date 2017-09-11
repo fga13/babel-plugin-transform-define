@@ -131,7 +131,7 @@ describe("babel-plugin-transform-define", () => {
 
     it("should transform alias import from import declaration", () => {
       const babelOpts = getBabelOps({
-        "__ROUTER__": "StaticRouter"
+        "__ROUTER__": "Static"
       });
       return assertTransform(
         path.join(__dirname, "./import-alias/actual-alias.js"),

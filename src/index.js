@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const traverse = require("traverse");
-const { get, has, find, partial } = require("lodash");
+const { get, has, find } = require("lodash");
 
 /**
  * Return an Array of every possible non-cyclic path in the object as a dot separated string sorted
@@ -77,9 +77,55 @@ const processNode = (replacements, nodePath, replaceFn, comparator) => { // esli
   const replacementKey = find(getSortedObjectPaths(replacements),
     (value) => comparator(nodePath, value));
   if (has(replacements, replacementKey)) {
-    console.log("Remplacement de ", replacementKey, "par", get(replacements, replacementKey));
     replaceAndEvaluateNode(replaceFn, nodePath, get(replacements, replacementKey));
   }
+};
+
+/**
+ * Change the name of imported name of ImportDeclaration node (may be a partial change)
+ * @param {string}    replacement     The replacement string for import imported name
+ * @param {string}    replacementKey  The text to replace
+ * @param {babelNode} nodePath        The node to evaluate
+ * @param {babelType} t               The babel type for cloning node
+ * @return {undefined}
+ */
+const processImportNameNode = (replacement, replacementKey, nodePath, t) => { // eslint-disable-line
+  // Modif des nom d'imports
+  const specifiers = nodePath.get("specifiers").filter((aPath) => t.isImportSpecifier(aPath));
+  for (const specifier of specifiers) {
+    const specifierReplacement = t.clone(specifier);
+    const imported = specifierReplacement.node.imported;
+    if (imported && imported.name.indexOf(replacementKey) >= 0) {
+      const newSourceName = imported.name.replace(replacementKey, replacement);
+      console.log("Change ", imported.name, "for", newSourceName);
+      imported.loc.identifierName = imported.loc.identifierName.replace(replacementKey, replacement);
+      imported.name = newSourceName;
+      specifier.replaceWith(
+        specifierReplacement.node
+      );
+    }
+  }
+};
+
+/**
+ * Change the path of imported source of ImportDeclaration node (may be a partial change)
+ * @param {string}    replacement     The replacement string for import imported name
+ * @param {string}    replacementKey  The text to replace
+ * @param {babelNode} nodePath        The node to evaluate
+ * @param {babelType} t               The babel type for cloning node
+ * @return {undefined}
+ */
+const processSourceImportNode = (replacement, replacementKey, nodePath, t) => { // eslint-disable-line
+  const sourceNode = nodePath.get("source");
+  const newSource = t.clone(sourceNode);
+  const newSourceNode = newSource.node;
+  const newSourceValue = newSourceNode.value.replace(replacementKey, replacement);
+  console.log("Change", newSourceNode.value, "for", newSourceValue);
+  newSourceNode.value = newSourceValue;
+  for (const item in newSource.node.extra) {
+    newSourceNode.extra[item] = newSourceNode.extra[item].replace(replacementKey, replacement);
+  }
+  sourceNode.replaceWith(newSourceNode);
 };
 
 const memberExpressionComparator = (nodePath, value) => nodePath.matchesPattern(value);
@@ -87,60 +133,32 @@ const identifierComparator = (nodePath, value) => nodePath.node.name === value;
 const unaryExpressionComparator = (nodePath, value) => nodePath.node.argument.name === value;
 const importDeclarationComparator = (nodePath, value) => nodePath.node.source.value.match(value);
 const importAliasComparator = (nodePath, value) => {
-  const importSpecifiers = nodePath.get("specifiers");
-  let found = false;
-  for (const specifier of importSpecifiers) {
-    const node = specifier.node;
-    if (node.imported !== undefined) {
-      const str = node.imported.name;
-      if (str.match(value) && !node.treated) {
-        found = true;
-        node.treated = true;
-      }
-    }
-  }
-  return found;
+  const specifiers = nodePath.get("specifiers");
+  const importedSpecifiers = specifiers.filter((aPath) => aPath.node.imported !== undefined);
+  return importedSpecifiers.find((aPath) => aPath.node.imported.name.match(value)) !== undefined;
 };
+
+const getReplacementKey = (nodePath, list, comparator) => find(list, (value) => comparator(nodePath, value));
 
 export default function ({ types: t }) {
   return {
     visitor: {
       ImportDeclaration(nodePath, state) {
         const replacements = getReplacements(state.opts);
-        // Parcours des noeuds 
-        let replacementKey = find(getSortedObjectPaths(replacements),
-        (value) => importAliasComparator(nodePath, value));
+        const replacementList = getSortedObjectPaths(replacements);
+
+        // Recherche de variable dans le nom (specifier) des imports
+        let replacementKey = getReplacementKey(nodePath, replacementList, importAliasComparator);
         if (has(replacements, replacementKey)) {
           const replacement = get(replacements, replacementKey);
-          // Modif des nom d'imports
-          const specifiers = nodePath.get("specifiers").filter((path) => t.isImportSpecifier(path));
-          for (const specifier of specifiers) {
-            const specifierReplacement = t.clone(specifier);
-            const imported = specifierReplacement.node.imported;
-            if (imported && imported.name.indexOf(replacementKey) >= 0) {
-              console.log("Remplacement de ", imported.name, "par", imported.name.replace(replacementKey, replacement));
-              imported.loc.identifierName = imported.loc.identifierName.replace(replacementKey, replacement);
-              imported.name = imported.name.replace(replacementKey, replacement);
-              specifier.replaceWith(
-                specifierReplacement.node
-              );
-            }
-          }
+          processImportNameNode(replacement, replacementKey, nodePath, t);
         }
-        
-        replacementKey = find(getSortedObjectPaths(replacements),
-        (value) => importDeclarationComparator(nodePath, value));
+
+        // Recherche de variable dans la source des imports
+        replacementKey = getReplacementKey(nodePath, replacementList, importDeclarationComparator);
         if (has(replacements, replacementKey)) {
           const replacement = get(replacements, replacementKey);
-          // Modif des sources
-          const sourceNode = nodePath.get("source");
-          const newSource = t.clone(sourceNode);
-          console.log("Remplacement de", newSource.node.value, "par", newSource.node.value.replace(replacementKey, replacement));
-          newSource.node.value = newSource.node.value.replace(replacementKey, replacement);
-          for (const item in newSource.node.extra) {
-            newSource.node.extra[item] = newSource.node.extra[item].replace(replacementKey, replacement);
-          }
-          sourceNode.replaceWith(newSource.node);
+          processSourceImportNode(replacement, replacementKey, nodePath, t);
         }
       },
       // process.env.NODE_ENV;
